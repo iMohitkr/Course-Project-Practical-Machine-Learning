@@ -3,7 +3,7 @@
 
 <h1>Instructions</h1>
 
-One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants.
+ In this project, my goal was to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants and classify how well they do something.
 
 <h1>Background</h1>
 
@@ -20,4 +20,4 @@ The test data are available here:
 https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
 
 
-The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har.
