@@ -1,0 +1,235 @@
+---
+title: "Predicting Quality of Excercises"
+author: "Mohit Kumar"
+date: "21 January 2017"
+output: html_document
+keep_md: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,cache = TRUE)
+```
+
+
+
+## Pre-processing 
+
+
+```{r message=FALSE,warning=FALSE}
+#required libraries
+library(caret)
+library(corrplot)
+library(ggplot2)
+library(GGally)
+library(Rtsne)
+
+```
+
+```{r}
+#saving the urls of train and test dataset
+
+trainUrl <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+#saving the name of files
+
+trainFile <- "./pml-training.csv"
+testFile  <- "./pml-testing.csv"
+
+#if files doesn't exist download them
+
+if (!file.exists(trainFile)) {
+  download.file(trainUrl, destfile=trainFile, method="auto")
+}
+if (!file.exists(testFile)) {
+  download.file(testUrl, destfile=testFile, method="auto")
+}
+
+set.seed(0)
+
+```
+
+
+
+## Synopsis
+
+For this project, we are given data from accelerometers on the belt, forearm, arm, and dumbell of 6 research study participants. Our training data consists of accelerometer data and a label identifying the quality of the activity the participant was doing. Our testing data consists of accelerometer data without the identifying label. Our goal is to predict the labels for the test set observations.
+
+
+
+
+
+## Part 1: Data
+
+
+Reading the training dataset into `train` object.
+
+```{r}
+#reading the train dataset
+
+train<-read.csv(trainFile,na.strings = c(NA,"#DIV/0!"),header = TRUE)
+
+head(train,n=1)
+```
+
+We can see that the first column is not useful along with the next 5 columns that are only for informative purposes.
+
+So, we will clean our data so that it consists of significant predictors only.For this we are going to remove all the columns with near zero variability and columns with more than 80% values NA.
+
+
+```{r}
+#removing the first column
+train<-train[,-1]
+
+#checking for variables that have zero variability
+nzv<-nearZeroVar(train)
+
+#removing variables that will not contribute towards model
+train<- train[,-nzv]
+
+
+#checking for columns that comprise of more than 80% NA values
+mostlyNA <- sapply(train, function(x) mean(is.na(x))) > 0.80
+
+#removing columns containing more than 80% NA values
+train <- train[, !mostlyNA]
+
+#removing the first five insignificant columns
+train<-train[,-(1:5)]
+
+```
+
+
+## Part 2: Exploratory data analysis
+
+* Fig 1
+
+Plotting a correlation plot to check for redundant variables.
+Here I have colored the correlations greater than 0.5 as blue and less than -0.5 as red.
+
+As `classe` is not numeric ,to use it in the `ggcorr` function we need to convert it to numeric data. 
+
+```{r fig.height=9,fig.width=9}
+#temporarily saving the train data into 't' object
+t<-train
+
+#converting the `classe` column into 'numeric'  
+t$classe<-as.numeric(t$classe)
+
+#plotting the correlation
+ggcorr(t, geom = "blank", label = TRUE, hjust = 1,label_size = 2.2,layout.exp = 5,size=2.7,label_round = 1,label_color = "black") +
+    geom_point(size = 6, aes(color = coefficient > 0 , alpha = abs(coefficient) > 0.5)) +
+    scale_alpha_manual(values = c("TRUE" = 0.5, "FALSE" = 0)) +
+    guides(color = FALSE, alpha = FALSE)
+
+#remove t object
+rm(t)
+
+```
+
+* Fig 2
+
+
+t-distributed stochastic neighbor embedding (t-SNE) is a machine learning algorithm for dimensionality reduction developed by Geoffrey Hinton and Laurens van der Maaten.It is a nonlinear dimensionality reduction technique that is particularly well-suited for embedding high-dimensional data into a space of two or three dimensions, which can then be visualized in a scatter plot. Specifically, it models each high-dimensional object by a two- or three-dimensional point in such a way that similar objects are modeled by nearby points and dissimilar objects are modeled by distant points.
+
+Here, I am providing the t-sne plot of the data.
+
+
+```{r}
+
+#creating a t-sne of train data
+tsne = Rtsne(as.matrix(train[,-ncol(train)]), check_duplicates=FALSE, pca=TRUE, 
+             perplexity=30, theta=0.5, dims=2)
+embedding = as.data.frame(tsne$Y)
+embedding$Class = train$classe
+
+#plotting the t-sne data
+g = ggplot(embedding, aes(x=V1, y=V2, color=Class)) +
+    geom_point(size=1.25) +
+    guides(colour=guide_legend(override.aes=list(size=6))) +
+    xlab("") + ylab("") +
+    ggtitle("t-SNE 2D Embedding of 'Classe' Outcome") +
+    theme_light(base_size=20) +
+    theme(axis.text.x=element_blank(),
+          axis.text.y=element_blank())
+print(g)
+
+```
+
+
+We can see that there is no clear difference in the 5 classes of exercises. So, building a regression model or any manual modeling is not possible. 
+
+Next we will use machine learning algorithms to achieve the classification task.
+
+
+## Part 3: Modeling
+
+I was considering to use random forest but it takes too much time to build the model using the following code. 
+```{r eval=FALSE }
+
+
+modFit <- train(classe ~ ., method = "rf", data = train, importance = T, trControl = trainControl(method = "cv", number = 10))
+
+```
+
+
+So, instead I will go for faster gradient boosting algorithm. It will be a bit less accurate but will be significantly faster.
+
+We will use the `trControl` parameter to specify that we will use 10-fold cross validation to evaluate our model.
+
+```{r message=FALSE}
+boostFit <- train(classe ~ ., method = "gbm", data = train, verbose = F, trControl = trainControl(method = "cv", number = 10))
+
+boostFit
+
+```
+
+
+ `boostFit` <i>model have an overall accuracy of 96% which is quite impressive</i> .The random forest model is more accurate with overall accuracy 99% but it is computationally very expensive to fit.
+
+
+
+
+## Part 4: Prediction
+
+First we will load the test data set and perform the tranformations that we have performed on the test dataset.
+
+```{r}
+#reading the test data
+test<-read.csv(testFile,na.strings = c(NA,"#DIV/0!"),header = TRUE)
+
+head(test,n=1)
+
+```
+
+We can see that `test` consisit of one extra last column that is not needed as it is informative only.
+
+```{r}
+#applying the same transformation that was used to tranform train data
+test<-test[,-1]      #removing the first column
+test<- test[,-nzv]    #removing variables that are close to zero variability
+test <- test[, !mostlyNA]       #removing variables that are mostly NA
+test<-test[,-(1:5)]         #removing the fist five columns
+
+test<-test[,-ncol(test)]   #removing the last column
+
+```
+
+Predictions are calculated on the test data and results are printed below.
+
+```{r}
+#predicting the test data
+preds<- predict(boostFit,newdata = test)
+
+preds
+
+```
+
+
+## Part 5: Conclusion
+
+We build a classifier to classify the 5 types of the acitivities. Overall accuracy of our model could be increased by using other more computational expensive models such as <i> random forests</i>. 
+
+(<b> I am grateful to the providers of the dataset used in this assignment : http://groupware.les.inf.puc-rio.br/har .</b> )
+
+
